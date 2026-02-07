@@ -20,6 +20,19 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from modules.hymn_lookup import lookup_hymn
 from modules.docx_generator import generate_bulletin
 
+# Phase 2: Liturgical Calendar + Lectionary
+from modules.calendar_service import get_calendar_info
+from modules.lectionary_service import LectionaryService
+import os
+
+# Initialize lectionary service (offline-first)
+_lectionary = LectionaryService(
+    redis_url=os.getenv("REDIS_URL", "redis://redis:6379"),
+    daily_office_path=os.getenv("DAILY_OFFICE_PATH", "/app/data/daily-office"),
+    lectserve_base=os.getenv("LECTSERVE_URL", "https://lectserve.com"),
+)
+
+
 # ============================================================================
 # CONFIGURATION - auto-detect Docker vs local Windows
 # ============================================================================
@@ -353,6 +366,37 @@ async def bulletin_form():
 # ============================================================================
 # RUN
 # ============================================================================
+
+
+
+# =====================================================================
+# PHASE 2: LECTIONARY ENDPOINTS
+# =====================================================================
+
+@app.get("/api/lectionary/{date_str}")
+async def get_lectionary(date_str: str):
+    """Get liturgical calendar info and RCL readings for a date (YYYY-MM-DD)."""
+    from datetime import datetime
+    try:
+        dt = datetime.strptime(date_str, "%Y-%m-%d").date()
+    except ValueError:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="Invalid date. Use YYYY-MM-DD.")
+    cal = get_calendar_info(dt)
+    readings = _lectionary.get_readings(dt, day_name=cal.get("day_name"))
+    return {"date": dt.isoformat(), "calendar": cal, "readings": readings}
+
+
+@app.get("/api/calendar/{date_str}")
+async def get_calendar(date_str: str):
+    """Get liturgical calendar info only (YYYY-MM-DD)."""
+    from datetime import datetime
+    try:
+        dt = datetime.strptime(date_str, "%Y-%m-%d").date()
+    except ValueError:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="Invalid date. Use YYYY-MM-DD.")
+    return get_calendar_info(dt)
 
 if __name__ == "__main__":
     import uvicorn
