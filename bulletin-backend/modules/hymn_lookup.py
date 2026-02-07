@@ -1,0 +1,106 @@
+"""
+Hymn Lookup Module - Episcopal Hymnal 1982
+Loads hymnal_1982.json and provides lookup by hymn number.
+"""
+
+import json
+import os
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_PATH = os.path.join(BASE_DIR, "..", "data", "hymnal_1982.json")
+
+HYMNAL_1982 = {}
+
+if os.path.exists(DATA_PATH):
+    # Use utf-8-sig to transparently strip BOM if present (common with PowerShell-generated files)
+    with open(DATA_PATH, "r", encoding="utf-8-sig") as f:
+        HYMNAL_1982 = json.load(f)
+else:
+    print(f"[WARN] Hymnal data not found at {DATA_PATH} - using built-in subset")
+    # Built-in fallback so the API always starts
+    HYMNAL_1982 = {
+        "1": {"title": "Father, we praise thee", "tune": "Christe sanctorum", "composer": "Latin, 10th cent.", "season": "General"},
+        "48": {"title": "O day of radiant gladness", "tune": "Es flog ein kleins Waldvogelein", "composer": "German melody", "season": "General"},
+        "57": {"title": "Lo, he comes with clouds descending", "tune": "Helmsley", "composer": "Thomas Olivers, 1765", "season": "Advent"},
+        "59": {"title": "Hark! a thrilling voice is sounding", "tune": "Merton", "composer": "William H. Monk, 1850", "season": "Advent"},
+        "60": {"title": "Creator of the stars of night", "tune": "Conditor alme siderum", "composer": "Plainsong, Mode IV", "season": "Advent"},
+        "61": {"title": "Sleepers, wake!", "tune": "Wachet auf", "composer": "Philipp Nicolai, 1599", "season": "Advent"},
+        "82": {"title": "Of the Father's love begotten", "tune": "Divinum mysterium", "composer": "Plainsong, Mode V", "season": "Christmas"},
+        "83": {"title": "O come, all ye faithful", "tune": "Adeste fideles", "composer": "John Francis Wade, c. 1743", "season": "Christmas"},
+        "87": {"title": "Hark! the herald angels sing", "tune": "Mendelssohn", "composer": "Felix Mendelssohn, 1840", "season": "Christmas"},
+        "96": {"title": "Angels we have heard on high", "tune": "Gloria", "composer": "French carol", "season": "Christmas"},
+        "100": {"title": "Joy to the world!", "tune": "Antioch", "composer": "George Frideric Handel, 1742", "season": "Christmas"},
+        "109": {"title": "The first Nowell", "tune": "The First Nowell", "composer": "English carol", "season": "Christmas"},
+        "111": {"title": "Silent night, holy night", "tune": "Stille Nacht", "composer": "Franz Gruber, 1818", "season": "Christmas"},
+        "112": {"title": "In the bleak midwinter", "tune": "Cranham", "composer": "Gustav Holst, 1906", "season": "Christmas"},
+        "119": {"title": "As with gladness men of old", "tune": "Dix", "composer": "Conrad Kocher, 1838", "season": "Epiphany"},
+        "124": {"title": "What star is this", "tune": "Puer nobis nascitur", "composer": "Trier MS, 15th cent.", "season": "Epiphany"},
+        "126": {"title": "The people who in darkness walked", "tune": "Dundee", "composer": "Scottish Psalter, 1615", "season": "Epiphany"},
+        "135": {"title": "Songs of thankfulness and praise", "tune": "Salzburg", "composer": "Jakob Hintze, 1678", "season": "Epiphany"},
+        "147": {"title": "Now let us all with one accord", "tune": "Bourbon", "composer": "Sarum plainsong", "season": "Lent"},
+        "149": {"title": "Eternal Lord of love", "tune": "Old 124th", "composer": "Genevan Psalter, 1551", "season": "Lent"},
+        "150": {"title": "Forty days and forty nights", "tune": "Aus der Tiefe", "composer": "Martin Herbst, 1676", "season": "Lent"},
+        "154": {"title": "All glory, laud, and honor", "tune": "Valet will ich dir geben", "composer": "Melchior Teschner, 1614", "season": "Palm Sunday"},
+        "158": {"title": "Ah, holy Jesus", "tune": "Herzliebster Jesu", "composer": "Johann Cruger, 1640", "season": "Holy Week"},
+        "168": {"title": "O sacred head, sore wounded", "tune": "Herzlich tut mich verlangen", "composer": "Hans Leo Hassler, 1601", "season": "Holy Week"},
+        "172": {"title": "Were you there", "tune": "Were you there", "composer": "Afro-American spiritual", "season": "Good Friday"},
+        "174": {"title": "At the Lamb's high feast we sing", "tune": "Salzburg", "composer": "Jakob Hintze, 1678", "season": "Easter"},
+        "178": {"title": "Alleluia, alleluia! Hearts to heaven", "tune": "Hymn to Joy", "composer": "Ludwig van Beethoven, 1824", "season": "Easter"},
+        "180": {"title": "He is risen, he is risen!", "tune": "Unser Herrscher", "composer": "Joachim Neander, 1680", "season": "Easter"},
+        "191": {"title": "Alleluia, alleluia, alleluia!", "tune": "O filii et filiae", "composer": "French melody, 15th cent.", "season": "Easter"},
+        "205": {"title": "Good Christians all, rejoice and sing!", "tune": "Gelobt sei Gott", "composer": "Melchior Vulpius, 1609", "season": "Easter"},
+        "207": {"title": "Jesus Christ is risen today", "tune": "Easter Hymn", "composer": "Lyra Davidica, 1708", "season": "Easter"},
+        "225": {"title": "Hail thee, festival day!", "tune": "Salve festa dies", "composer": "Ralph Vaughan Williams, 1906", "season": "Holy Week"},
+        "290": {"title": "Come, ye thankful people, come", "tune": "St. George's Windsor", "composer": "George J. Elvey, 1858", "season": "General"},
+        "304": {"title": "I come with joy to meet my Lord", "tune": "Land of Rest", "composer": "American folk melody", "season": "Communion"},
+        "309": {"title": "O Food to pilgrims given", "tune": "O Welt, ich muss dich lassen", "composer": "Heinrich Isaac, c. 1490", "season": "Communion"},
+        "318": {"title": "Here, O my Lord, I see thee face to face", "tune": "Langran", "composer": "James Langran, 1861", "season": "Communion"},
+        "320": {"title": "Zion, praise thy Savior, singing", "tune": "Cwm Rhondda", "composer": "John Hughes, 1907", "season": "Communion"},
+        "321": {"title": "My God, thy table now is spread", "tune": "Rockingham", "composer": "Edward Miller, 1790", "season": "Communion"},
+        "324": {"title": "Let all mortal flesh keep silence", "tune": "Picardy", "composer": "French carol", "season": "Communion"},
+        "325": {"title": "Let us break bread together", "tune": "Let Us Break Bread", "composer": "Afro-American spiritual", "season": "Communion"},
+        "362": {"title": "Holy, holy, holy! Lord God Almighty!", "tune": "Nicaea", "composer": "John Bacchus Dykes, 1861", "season": "Trinity"},
+        "376": {"title": "Joyful, joyful, we adore thee", "tune": "Hymn to Joy", "composer": "Ludwig van Beethoven, 1824", "season": "General"},
+        "388": {"title": "O worship the King, all glorious above", "tune": "Hanover", "composer": "William Croft, 1708", "season": "General"},
+        "390": {"title": "Praise to the Lord, the Almighty", "tune": "Lobe den Herren", "composer": "Joachim Neander, 1680", "season": "General"},
+        "400": {"title": "All creatures of our God and King", "tune": "Lasst uns erfreuen", "composer": "Geistliche Kirchengesange, 1623", "season": "General"},
+        "410": {"title": "Praise, my soul, the King of heaven", "tune": "Lauda anima", "composer": "John Goss, 1869", "season": "General"},
+        "432": {"title": "O praise ye the Lord!", "tune": "Laudate Dominum", "composer": "C. Hubert H. Parry, 1894", "season": "General"},
+        "460": {"title": "Alleluia! sing to Jesus!", "tune": "Hyfrydol", "composer": "Rowland H. Prichard, 1830", "season": "General"},
+        "473": {"title": "Lift high the cross", "tune": "Crucifer", "composer": "Sydney H. Nicholson, 1916", "season": "General"},
+        "488": {"title": "Be thou my vision", "tune": "Slane", "composer": "Irish ballad melody", "season": "General"},
+        "493": {"title": "O for a thousand tongues to sing", "tune": "Azmon", "composer": "Carl G. Glaser, 1828", "season": "General"},
+        "518": {"title": "Christ is made the sure foundation", "tune": "Westminster Abbey", "composer": "Henry Purcell, c. 1680", "season": "Church"},
+        "522": {"title": "Glorious things of thee are spoken", "tune": "Austria", "composer": "Franz Joseph Haydn, 1797", "season": "Church"},
+        "525": {"title": "The Church's one foundation", "tune": "Aurelia", "composer": "Samuel S. Wesley, 1864", "season": "Church/General"},
+        "537": {"title": "Christ for the world we sing!", "tune": "Moscow", "composer": "Felice de Giardini, 1769", "season": "General"},
+        "599": {"title": "Lift every voice and sing", "tune": "Lift Every Voice", "composer": "J. Rosamond Johnson, 1921", "season": "General"},
+        "618": {"title": "Ye watchers and ye holy ones", "tune": "Lasst uns erfreuen", "composer": "Geistliche Kirchengesange, 1623", "season": "Saints' Days"},
+        "636": {"title": "How firm a foundation", "tune": "Foundation", "composer": "Early American melody", "season": "Lent/Passiontide"},
+        "657": {"title": "Love divine, all loves excelling", "tune": "Hyfrydol", "composer": "Rowland H. Prichard, 1830", "season": "General"},
+        "671": {"title": "Amazing grace!", "tune": "New Britain", "composer": "Virginia Harmony, 1831", "season": "General"},
+        "680": {"title": "O God, our help in ages past", "tune": "St. Anne", "composer": "William Croft, 1708", "season": "General"},
+    }
+
+
+def lookup_hymn(number):
+    """Look up a hymn by number. Returns dict with title, tune, composer, season or None."""
+    key = str(number).strip()
+    return HYMNAL_1982.get(key, None)
+
+
+def list_hymns_by_season(season):
+    """Return all hymns matching a liturgical season."""
+    results = {}
+    for num, data in HYMNAL_1982.items():
+        if data.get("season", "").lower() == season.lower():
+            results[num] = data
+    return results
+
+
+def get_all_seasons():
+    """Return sorted list of all liturgical seasons in the database."""
+    seasons = set()
+    for data in HYMNAL_1982.values():
+        seasons.add(data.get("season", "Unknown"))
+    return sorted(seasons)

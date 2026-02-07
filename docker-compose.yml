@@ -1,0 +1,330 @@
+# ==========================================================================
+# Church AI Infrastructure - Docker Compose
+# Episcopal Bulletin Generation + Document Management
+# 48GB RAM Configuration (16GB Windows Reserve)
+# Base Path: D:\Docker\
+# ==========================================================================
+
+services:
+
+  # ========================================================================
+  # AI PROCESSING LAYER
+  # ========================================================================
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: church-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - D:/Docker/ollama:/root/.ollama
+    environment:
+      - OLLAMA_MODELS=/root/.ollama/models
+      - OLLAMA_NUM_PARALLEL=4
+      - OLLAMA_MAX_LOADED_MODELS=2
+      - OLLAMA_HOST=0.0.0.0
+    deploy:
+      resources:
+        limits:
+          memory: 24G
+        reservations:
+          memory: 16G
+    restart: unless-stopped
+    networks:
+      - church-ai-network
+    healthcheck:
+      disable: true
+
+  open-notebook:
+    image: lfnovo/open_notebook:v1-latest-single
+    container_name: church-notebook
+    ports:
+      - "3030:3030"
+    volumes:
+      - D:/Docker/open-notebook:/app/data
+    environment:
+      - OLLAMA_URL=http://ollama:11434
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 1G
+    depends_on:
+      - ollama
+      - surrealdb
+    restart: unless-stopped
+    networks:
+      - church-ai-network
+
+  surrealdb:
+    image: surrealdb/surrealdb:latest
+    container_name: church-surrealdb
+    command: start --log trace --user root --pass root file:/data/database.db
+    ports:
+      - "8000:8000"
+    volumes:
+      - D:/Docker/surrealdb:/data
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
+    restart: unless-stopped
+    networks:
+      - church-ai-network
+
+  # ========================================================================
+  # DOCUMENT MANAGEMENT
+  # ========================================================================
+
+  paperless:
+    image: ghcr.io/paperless-ngx/paperless-ngx:latest
+    container_name: church-paperless
+    ports:
+      - "8080:8000"
+    volumes:
+      - D:/Docker/paperless/data:/usr/src/paperless/data
+      - D:/Docker/paperless/media:/usr/src/paperless/media
+      - D:/Docker/paperless/export:/usr/src/paperless/export
+      - D:/Documents/Consume:/usr/src/paperless/consume
+    environment:
+      PAPERLESS_DBHOST: postgresql
+      PAPERLESS_DBNAME: paperless
+      PAPERLESS_DBUSER: ${POSTGRES_USER:-bulletin}
+      PAPERLESS_DBPASS: ${POSTGRES_PASSWORD:-bulletin_secure_password}
+      PAPERLESS_REDIS: redis://redis:6379
+      PAPERLESS_SECRET_KEY: ${PAPERLESS_SECRET_KEY:-change-me-to-random-string}
+      PAPERLESS_TIME_ZONE: America/New_York
+      PAPERLESS_OCR_LANGUAGE: eng
+      PAPERLESS_CONSUMER_POLLING: 30
+      PAPERLESS_TASK_WORKERS: 4
+      PAPERLESS_THREADS_PER_WORKER: 2
+    deploy:
+      resources:
+        limits:
+          memory: 6G
+        reservations:
+          memory: 3G
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - church-ai-network
+
+  # ========================================================================
+  # DATA LAYER
+  # ========================================================================
+
+  postgresql:
+    image: postgres:16-alpine
+    container_name: church-postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - D:/Docker/postgres:/var/lib/postgresql/data
+      - ./init-bulletin-db.sql:/docker-entrypoint-initdb.d/01-init-bulletin.sql
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-bulletin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bulletin_secure_password}
+      POSTGRES_DB: ${POSTGRES_DB:-bulletin_db}
+    command: >
+      postgres
+      -c shared_buffers=1536MB
+      -c effective_cache_size=4GB
+      -c work_mem=48MB
+      -c maintenance_work_mem=512MB
+      -c max_worker_processes=8
+      -c max_parallel_workers_per_gather=4
+      -c max_parallel_workers=8
+      -c random_page_cost=1.1
+      -c effective_io_concurrency=200
+      -c wal_buffers=64MB
+      -c max_connections=200
+    deploy:
+      resources:
+        limits:
+          memory: 6G
+        reservations:
+          memory: 3G
+    restart: unless-stopped
+    networks:
+      - church-ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-bulletin}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: church-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - D:/Docker/redis:/data
+    command: >
+      redis-server
+      --maxmemory 1gb
+      --maxmemory-policy allkeys-lru
+      --save 60 1000
+      --appendonly yes
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
+    restart: unless-stopped
+    networks:
+      - church-ai-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ========================================================================
+  # BULLETIN GENERATION API
+  # Integrates: BCP-Source, Daily Office Lectionary, RCL, Hymnary
+  # ========================================================================
+
+  bulletin-api:
+    build:
+      context: ./bulletin-backend
+      dockerfile: Dockerfile
+    container_name: church-bulletin-api
+    ports:
+      - "8001:8000"
+    volumes:
+      # Persistent data
+      - D:/Docker/bulletin/assets:/app/assets
+      - D:/Docker/bulletin/bulletins:/app/output
+      - D:/Docker/bulletin/templates:/app/templates
+      # Online datasets (cloned by init script)
+      - D:/Docker/datasets/BCP-Source:/app/data/bcp:ro
+      - D:/Docker/datasets/daily-office:/app/data/daily-office:ro
+      # User-provided resources (optional overrides)
+      - D:/Documents/BCP_Resources:/app/data/bcp-local:ro
+      - D:/Documents/RCL_Resources:/app/data/rcl-local:ro
+    environment:
+      # Database
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-bulletin}:${POSTGRES_PASSWORD:-bulletin_secure_password}@postgresql:5432/${POSTGRES_DB:-bulletin_db}
+      # Redis
+      - REDIS_URL=redis://redis:6379
+      # Ollama
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_MODEL=llama3.1:8b
+      # Dataset paths (inside container)
+      - BCP_SOURCE_PATH=/app/data/bcp
+      - DAILY_OFFICE_PATH=/app/data/daily-office
+      - BCP_LOCAL_PATH=/app/data/bcp-local
+      - RCL_LOCAL_PATH=/app/data/rcl-local
+      - OUTPUT_PATH=/app/output
+      - ASSET_PATH=/app/assets
+      - TEMPLATE_PATH=/app/templates
+      # API Settings
+      - API_TITLE=Episcopal Bulletin Generation API
+      - API_VERSION=1.0.0
+      - LOG_LEVEL=INFO
+      # Hymnary.org API (free, no key needed)
+      - ENABLE_HYMNARY_API=true
+      - HYMNARY_API_TIMEOUT=5
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 1G
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - church-ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\" || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ========================================================================
+  # FLASK WEB GUI - User Dashboard
+  # ========================================================================
+
+  flask-web-gui:
+    build:
+      context: ./flask-web-gui
+      dockerfile: Dockerfile
+    container_name: church-flask-gui
+    ports:
+      - "5000:5000"
+    volumes:
+      - D:/Docker/flask-web-gui/static:/app/static
+      - D:/Docker/flask-web-gui/templates:/app/templates
+    environment:
+      - BULLETIN_API_URL=http://bulletin-api:8000
+      - PAPERLESS_URL=http://paperless:8000
+      - NOTEBOOK_URL=http://open-notebook:3030
+      - FLASK_ENV=production
+      - FLASK_RUN_HOST=0.0.0.0
+      - FLASK_RUN_PORT=5000
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
+    depends_on:
+      bulletin-api:
+        condition: service_healthy
+      postgresql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - church-ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+# ==========================================================================
+# NETWORKS
+# ==========================================================================
+
+networks:
+  church-ai-network:
+    driver: bridge
+    name: church-ai-network
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+# ==========================================================================
+# RESOURCE ALLOCATION SUMMARY (48GB Total)
+# ==========================================================================
+# Ollama:         24GB limit / 16GB reserved (llama3.1:8b + headroom)
+# PostgreSQL:      6GB limit /  3GB reserved (tuned for SSD)
+# Paperless-NGX:   6GB limit /  3GB reserved (OCR + 4 workers)
+# Open Notebook:   2GB limit /  1GB reserved (document chat)
+# Bulletin API:    2GB limit /  1GB reserved (FastAPI backend)
+# Redis:           1GB limit / 512MB reserved (cache/queue)
+# SurrealDB:       1GB limit / 512MB reserved (notebook storage)
+# Flask GUI:       1GB limit / 512MB reserved (web dashboard)
+# ──────────────────────────────────────────
+# Total:          43GB limit / 25.5GB reserved
+# Windows:        16GB+ comfortable headroom
+# ==========================================================================
