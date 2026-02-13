@@ -23,6 +23,15 @@ from modules.docx_generator import generate_bulletin
 # Phase 2: Liturgical Calendar + Lectionary
 from modules.calendar_service import get_calendar_info
 from modules.lectionary_service import LectionaryService
+
+# Phase 3: Music Service (S-number lookups, music plans)
+from modules.music_service import (
+    MusicService, MusicPlan, lookup_service_music,
+    list_service_music, list_music_types,
+)
+
+# Phase 4: Asset Extraction
+from modules.asset_extractor import AssetExtractor
 import os
 
 # Initialize lectionary service (offline-first)
@@ -32,6 +41,13 @@ _lectionary = LectionaryService(
     lectserve_base=os.getenv("LECTSERVE_URL", "https://lectserve.com"),
 )
 
+
+
+# Phase 3: Music service
+music_service = MusicService()
+
+# Phase 4: Asset extractor
+asset_extractor = AssetExtractor()
 
 # ============================================================================
 # CONFIGURATION - auto-detect Docker vs local Windows
@@ -397,6 +413,143 @@ async def get_calendar(date_str: str):
         from fastapi import HTTPException
         raise HTTPException(status_code=400, detail="Invalid date. Use YYYY-MM-DD.")
     return get_calendar_info(dt)
+
+
+# ============================================================================
+# PHASE 3 ENDPOINTS: Music Data Entry & Service Music Lookup
+# ============================================================================
+
+@app.get('/api/service-music/{s_number}')
+async def get_service_music(s_number: str):
+    result = lookup_service_music(s_number)
+    if not result:
+        raise HTTPException(status_code=404, detail=f'S-number {s_number} not found')
+    return result
+
+
+@app.get('/api/service-music')
+async def list_all_service_music(music_type: str = None):
+    return {'service_music': list_service_music(music_type), 'types': list_music_types()}
+
+
+@app.post('/api/music-plan')
+async def save_music_plan(
+    service_date: str = Form(...),
+    service_type: str = Form('Holy Eucharist Rite II'),
+    opening_hymn: str = Form(''), sequence_hymn: str = Form(''),
+    offertory_hymn: str = Form(''), communion_hymn_1: str = Form(''),
+    communion_hymn_2: str = Form(''), closing_hymn: str = Form(''),
+    gloria: str = Form(''), kyrie: str = Form(''),
+    sanctus: str = Form(''), fraction: str = Form(''),
+    anthem_title: str = Form(''), anthem_composer: str = Form(''),
+    prelude_title: str = Form(''), prelude_composer: str = Form(''),
+    postlude_title: str = Form(''), postlude_composer: str = Form(''),
+    soloist: str = Form(''), musician_notes: str = Form(''),
+):
+    plan = MusicPlan(
+        service_date=service_date, service_type=service_type,
+        opening_hymn=opening_hymn, sequence_hymn=sequence_hymn,
+        offertory_hymn=offertory_hymn, communion_hymn_1=communion_hymn_1,
+        communion_hymn_2=communion_hymn_2, closing_hymn=closing_hymn,
+        gloria=gloria, kyrie=kyrie, sanctus=sanctus, fraction=fraction,
+        anthem_title=anthem_title, anthem_composer=anthem_composer,
+        prelude_title=prelude_title, prelude_composer=prelude_composer,
+        postlude_title=postlude_title, postlude_composer=postlude_composer,
+        soloist=soloist, musician_notes=musician_notes,
+    )
+    result = music_service.save_plan(plan)
+    return {'status': 'saved', 'date': service_date, 'plan': result}
+
+
+@app.get('/api/music-plan/{service_date}')
+async def get_music_plan(service_date: str):
+    plan = music_service.get_plan(service_date)
+    if not plan:
+        raise HTTPException(status_code=404, detail=f'No music plan for {service_date}')
+    return plan
+
+
+@app.get('/api/music-plans')
+async def list_music_plans(limit: int = 20):
+    plans = music_service.list_plans(limit=limit)
+    return {'plans': plans, 'count': len(plans)}
+
+
+@app.delete('/api/music-plan/{service_date}')
+async def delete_music_plan(service_date: str):
+    if music_service.delete_plan(service_date):
+        return {'status': 'deleted', 'date': service_date}
+    raise HTTPException(status_code=404, detail=f'No music plan for {service_date}')
+
+
+# ============================================================================
+# PHASE 4 ENDPOINTS: Asset Extraction & Management
+# ============================================================================
+
+@app.post('/api/assets/extract')
+async def extract_assets(pdf_path: str, label: str = ''):
+    try:
+        result = asset_extractor.extract_from_pdf(pdf_path, source_label=label)
+        return result
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f'PDF not found: {pdf_path}')
+
+
+@app.get('/api/assets')
+async def list_assets(category: str = None, source: str = None, max_results: int = 50):
+    assets = asset_extractor.list_assets(category=category, source_pdf=source, max_results=max_results)
+    return {'assets': assets, 'count': len(assets)}
+
+
+@app.get('/api/assets/{asset_id}')
+async def get_asset_metadata(asset_id: str):
+    asset = asset_extractor.get_asset(asset_id)
+    if not asset:
+        raise HTTPException(status_code=404, detail=f'Asset {asset_id} not found')
+    return asset
+
+
+@app.get('/api/assets/{asset_id}/download')
+async def download_asset(asset_id: str):
+    asset = asset_extractor.get_asset(asset_id)
+    if not asset:
+        raise HTTPException(status_code=404, detail=f'Asset {asset_id} not found')
+    from pathlib import Path as P
+    asset_path = P(asset['path'])
+    if not asset_path.exists():
+        asset_path = P(os.getenv('ASSET_PATH', './assets')) / 'extracted' / asset['filename']
+    if not asset_path.exists():
+        raise HTTPException(status_code=404, detail='Asset file missing from disk')
+    return FileResponse(path=str(asset_path), filename=asset['filename'])
+
+
+@app.put('/api/assets/{asset_id}/category')
+async def recategorize_asset(asset_id: str, category: str):
+    result = asset_extractor.recategorize(asset_id, category)
+    if not result:
+        raise HTTPException(status_code=404, detail=f'Asset {asset_id} not found')
+    return result
+
+
+@app.delete('/api/assets/{asset_id}')
+async def delete_asset(asset_id: str):
+    if asset_extractor.delete_asset(asset_id):
+        return {'status': 'deleted', 'id': asset_id}
+    raise HTTPException(status_code=404, detail=f'Asset {asset_id} not found')
+
+
+@app.get('/api/assets/stats/summary')
+async def asset_stats():
+    return asset_extractor.stats()
+
+
+@app.post('/api/assets/paperless/{document_id}')
+async def import_from_paperless(document_id: int):
+    result = await asset_extractor.import_from_paperless(document_id)
+    if result is None:
+        raise HTTPException(status_code=502, detail='Paperless import failed')
+    return result
+
 
 if __name__ == "__main__":
     import uvicorn

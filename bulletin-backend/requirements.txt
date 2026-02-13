@@ -6,3 +6,7 @@ python-multipart>=0.0.6
 liturgical-calendar
 httpx
 redis
+httpx
+PyMuPDF
+Pillow
+pdfplumber
